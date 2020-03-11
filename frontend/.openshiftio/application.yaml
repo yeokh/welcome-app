@@ -1,0 +1,183 @@
+objects:
+- apiVersion: image.openshift.io/v1
+  kind: ImageStream
+  metadata:
+    creationTimestamp: null
+    labels:
+      app: welcome-app
+    name: centos7-s2i-web-app
+  spec:
+    lookupPolicy:
+      local: false
+    tags:
+    - from:
+        kind: DockerImage
+        name: nodeshift/centos7-s2i-web-app
+      generation: null
+      importPolicy: {}
+      name: latest
+      referencePolicy:
+        type: ''
+  status:
+    dockerImageRepository: ''
+- apiVersion: image.openshift.io/v1
+  kind: ImageStream
+  metadata:
+    creationTimestamp: null
+    labels:
+      app: welcome-app
+    name: welcome-app-frontend
+  spec:
+    lookupPolicy:
+      local: false
+  status:
+    dockerImageRepository: ''
+- apiVersion: build.openshift.io/v1
+  kind: BuildConfig
+  metadata:
+    creationTimestamp: null
+    labels:
+      app: welcome-app
+    name: welcome-app-frontend
+  spec:
+    nodeSelector: null
+    output:
+      to:
+        kind: ImageStreamTag
+        name: welcome-app-frontend:latest
+    postCommit: {}
+    resources: {}
+    source:
+      git:
+        uri: ${SOURCE_REPOSITORY_URL}
+      type: Git
+      contextDir: frontend
+    strategy:
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: centos7-s2i-web-app:latest
+        incremental: true
+        env:
+        - name: OUTPUT_DIR
+          value: dist/welcome-app
+      type: Source
+    triggers:
+    - type: GitHub
+      github:
+        secret: ${GITHUB_WEBHOOK_SECRET}
+    - type: ConfigChange
+    - type: ImageChange
+      imageChange: {}
+  status:
+    lastVersion: 0
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    creationTimestamp: null
+    labels:
+      app: welcome-app
+    name: welcome-app-frontend
+  spec:
+    replicas: 1
+    selector:
+      app: welcome-app
+      deploymentconfig: welcome-app-frontend
+    strategy:
+      resources: {}
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: welcome-app
+          deploymentconfig: welcome-app-frontend
+      spec:
+        containers:
+        - image: welcome-app-frontend:latest
+          name: welcome-app-frontend
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          resources:
+            limits:
+              cpu: 200m
+              memory: 300Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 120
+            timeoutSeconds: 3
+          env:
+          - name: OUTPUT_DIR
+            value: dist/welcome-app
+    test: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - welcome-app-frontend
+        from:
+          kind: ImageStreamTag
+          name: welcome-app-frontend:latest
+      type: ImageChange
+  status:
+    availableReplicas: 0
+    latestVersion: 0
+    observedGeneration: 0
+    replicas: 0
+    unavailableReplicas: 0
+    updatedReplicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    creationTimestamp: null
+    labels:
+      app: welcome-app
+    name: welcome-app-frontend
+  spec:
+    ports:
+    - name: 8080-tcp
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: welcome-app
+      deploymentconfig: welcome-app-frontend
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: welcome-app-frontend
+    labels:
+      app: welcome-app
+  spec:
+    port:
+      targetPort: 8080-tcp
+    to:
+      kind: Service
+      name: welcome-app-frontend
+parameters:
+- name: SOURCE_REPOSITORY_URL
+  description: The source URL for the application
+  displayName: Source URL
+  value: https://github.com/dummy_org/dummy_repo
+  required: true
+- name: GITHUB_WEBHOOK_SECRET
+  description: The secret used to configure a GitHub webhook
+  displayName: GitHub Webhook Secret
+  required: true
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+apiVersion: template.openshift.io/v1
+kind: Template
